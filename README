@@ -8,9 +8,9 @@ How to Use:
     QXmppConfiguration conf;
     conf.setSASLAuthMechanism(QXmppConfiguration::SASLXFacebook);
     conf.setDomain("chat.facebook.com");
-    conf.setAppId(YOUR_APP_ID);
-    conf.setAppSecret(YOUR_APP_SECRET);
-    conf.setAccessToken(ACCESS_TOKEN);
+    conf.setFacebookAppId(YOUR_APP_ID);
+    conf.setFacebookAppSecret(YOUR_APP_SECRET);
+    conf.setFacebookAccessToken(ACCESS_TOKEN);
 
     QXmppClient client;
     client.connectToServer(conf);

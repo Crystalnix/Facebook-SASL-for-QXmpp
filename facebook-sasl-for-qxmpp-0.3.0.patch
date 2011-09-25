@@ -6,17 +6,17 @@ index b47b387..def607f 100644
      m_resource = resource;
  }
  
-+void QXmppConfiguration::setAppId(const QString& appId)
++void QXmppConfiguration::setFacebookAppId(const QString& appId)
 +{
 +    m_appId = appId;
 +}
 +
-+void QXmppConfiguration::setAccessToken(const QString& accessToken)
++void QXmppConfiguration::setFacebookAccessToken(const QString& accessToken)
 +{
 +    m_accessToken = accessToken;
 +}
 +
-+void QXmppConfiguration::setAppSecret(const QString& appSecret)
++void QXmppConfiguration::setFacebookAppSecret(const QString& appSecret)
 +{
 +    m_appSecret = appSecret;
 +}
@@ -28,17 +28,17 @@ index b47b387..def607f 100644
      return m_resource;
  }
  
-+QString QXmppConfiguration::appId() const
++QString QXmppConfiguration::facebookAppId() const
 +{
 +    return m_appId;
 +}
 +
-+QString QXmppConfiguration::accessToken() const
++QString QXmppConfiguration::facebookAccessToken() const
 +{
 +    return m_accessToken;
 +}
 +
-+QString QXmppConfiguration::appSecret() const
++QString QXmppConfiguration::facebookAppSecret() const
 +{
 +    return m_appSecret;
 +}
@@ -64,14 +64,14 @@ index f99b98f..5378931 100644
      QString resource() const;
      void setResource(const QString&);
  
-+    QString appId() const;
-+    void setAppId(const QString&);
++    QString facebookAppId() const;
++    void setFacebookAppId(const QString&);
 +
-+    QString accessToken() const;
-+    void setAccessToken(const QString&);
++    QString facebookAccessToken() const;
++    void setFacebookAccessToken(const QString&);
 +
-+    QString appSecret() const;
-+    void setAppSecret(const QString&);
++    QString facebookAppSecret() const;
++    void setFacebookAppSecret(const QString&);
 +
      QString jid() const;
      void setJid(const QString &jid);
@@ -167,9 +167,9 @@ index 0c2af46..e87d419 100644
 +        return;
 +    }
 +
-+    d->saslFacebook.setApiKey(configuration().appId().toUtf8());
-+    d->saslFacebook.setAppSecret(configuration().appSecret().toUtf8());
-+    d->saslFacebook.setSessioKey(configuration().accessToken().toUtf8());
++    d->saslFacebook.setApiKey(configuration().facebookAppId().toUtf8());
++    d->saslFacebook.setAppSecret(configuration().facebookAppSecret().toUtf8());
++    d->saslFacebook.setSessioKey(configuration().facebookAccessToken().toUtf8());
 +    d->saslFacebook.setCallId(QXmppSaslXFacebook::generateCallId());
 +    d->saslFacebook.setMethod(map.value("method"));
 +    d->saslFacebook.setNonce(map.value("nonce"));
