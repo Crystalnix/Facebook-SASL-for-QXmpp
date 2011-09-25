@@ -1,0 +1,406 @@
+diff --git src/QXmppConfiguration.cpp src/QXmppConfiguration.cpp
+index b47b387..def607f 100644
+--- src/QXmppConfiguration.cpp
++++ src/QXmppConfiguration.cpp
+@@ -125,6 +125,21 @@ void QXmppConfiguration::setResource(const QString& resource)
+     m_resource = resource;
+ }
+ 
++void QXmppConfiguration::setAppId(const QString& appId)
++{
++    m_appId = appId;
++}
++
++void QXmppConfiguration::setAccessToken(const QString& accessToken)
++{
++    m_accessToken = accessToken;
++}
++
++void QXmppConfiguration::setAppSecret(const QString& appSecret)
++{
++    m_appSecret = appSecret;
++}
++
+ /// Sets the JID. If a full JID (i.e. one with a resource) is given, calling
+ /// this method will update the username, domain and resource. Otherwise, only
+ /// the username and the domain will be updated.
+@@ -200,6 +215,21 @@ QString QXmppConfiguration::resource() const
+     return m_resource;
+ }
+ 
++QString QXmppConfiguration::appId() const
++{
++    return m_appId;
++}
++
++QString QXmppConfiguration::accessToken() const
++{
++    return m_accessToken;
++}
++
++QString QXmppConfiguration::appSecret() const
++{
++    return m_appSecret;
++}
++
+ /// Returns the jabber id (jid).
+ ///
+ /// \return jabber id (jid)
+diff --git src/QXmppConfiguration.h src/QXmppConfiguration.h
+index f99b98f..5378931 100644
+--- src/QXmppConfiguration.h
++++ src/QXmppConfiguration.h
+@@ -70,7 +70,8 @@ public:
+     {
+         SASLPlain = 0,  ///< Plain
+         SASLDigestMD5,  ///< Digest MD5 (default)
+-        SASLAnonymous   ///< Anonymous
++        SASLAnonymous,  ///< Anonymous
++        SASLXFacebook
+     };
+ 
+     /// An enumeration for stream compression methods.
+@@ -100,6 +101,15 @@ public:
+     QString resource() const;
+     void setResource(const QString&);
+ 
++    QString appId() const;
++    void setAppId(const QString&);
++
++    QString accessToken() const;
++    void setAccessToken(const QString&);
++
++    QString appSecret() const;
++    void setAppSecret(const QString&);
++
+     QString jid() const;
+     void setJid(const QString &jid);
+ 
+@@ -169,6 +179,11 @@ private:
+     QString m_domain;
+     QString m_resource;
+ 
++    // Facebook
++    QString m_appId;
++    QString m_accessToken;
++    QString m_appSecret;
++
+     // default is false
+     bool m_autoAcceptSubscriptions;
+     // default is true
+diff --git src/QXmppOutgoingClient.cpp src/QXmppOutgoingClient.cpp
+index 0c2af46..e87d419 100644
+--- src/QXmppOutgoingClient.cpp
++++ src/QXmppOutgoingClient.cpp
+@@ -77,6 +77,9 @@ public:
+     QXmppSaslDigestMd5 saslDigest;
+     int saslStep;
+ 
++    // XFacebook
++    QXmppSaslXFacebook saslFacebook;
++
+     // Timers
+     QTimer *pingTimer;
+     QTimer *timeoutTimer;
+@@ -339,6 +342,9 @@ void QXmppOutgoingClient::handleStanza(const QDomElement &nodeRecv)
+             case QXmppConfiguration::SASLAnonymous:
+                 sendData("<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='ANONYMOUS'/>");
+                 break;
++            case QXmppConfiguration::SASLXFacebook:
++                sendData("<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='X-FACEBOOK-PLATFORM'/>");
++                break;
+             }
+         }
+ 
+@@ -383,18 +389,28 @@ void QXmppOutgoingClient::handleStanza(const QDomElement &nodeRecv)
+         else if(nodeRecv.tagName() == "challenge")
+         {
+             // TODO: Track which mechanism was used for when other SASL protocols which use challenges are supported
+-            d->saslStep++;
+-            switch (d->saslStep)
++            QXmppConfiguration::SASLAuthMechanism mechanism = configuration().sASLAuthMechanism();
++            switch(mechanism)
+             {
+-            case 1 :
+-                sendAuthDigestMD5ResponseStep1(nodeRecv.text());
+-                break;
+-            case 2 :
+-                sendAuthDigestMD5ResponseStep2(nodeRecv.text());
++            case QXmppConfiguration::SASLDigestMD5:
++                d->saslStep++;
++                switch (d->saslStep)
++                {
++                case 1 :
++                    sendAuthDigestMD5ResponseStep1(nodeRecv.text());
++                    break;
++                case 2 :
++                    sendAuthDigestMD5ResponseStep2(nodeRecv.text());
++                    break;
++                default :
++                    warning("Too many authentication steps");
++                    disconnectFromHost();
++                    break;
++                }
++            case QXmppConfiguration::SASLXFacebook:
++                sendAuthXFacebookResponse(nodeRecv.text());
+                 break;
+-            default :
+-                warning("Too many authentication steps");
+-                disconnectFromHost();
++            default:
+                 break;
+             }
+         }
+@@ -666,6 +683,41 @@ void QXmppOutgoingClient::sendAuthDigestMD5ResponseStep2(const QString &challeng
+     sendData("<response xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>");
+ }
+ 
++void QXmppOutgoingClient::sendAuthXFacebookResponse(const QString& challenge)
++{
++    QByteArray ba = QByteArray::fromBase64(challenge.toAscii());
++    QMap<QByteArray, QByteArray> map = QXmppSaslXFacebook::parseMessage(ba);
++
++    if (!map.contains("nonce"))
++    {
++        warning("sendAuthXFacebookResponse: Invalid input");
++        disconnectFromHost();
++        return;
++    }
++
++    d->saslFacebook.setApiKey(configuration().appId().toUtf8());
++    d->saslFacebook.setAppSecret(configuration().appSecret().toUtf8());
++    d->saslFacebook.setSessioKey(configuration().accessToken().toUtf8());
++    d->saslFacebook.setCallId(QXmppSaslXFacebook::generateCallId());
++    d->saslFacebook.setMethod(map.value("method"));
++    d->saslFacebook.setNonce(map.value("nonce"));
++    d->saslFacebook.setV("1.0");
++
++    // Build response
++    QMap<QByteArray, QByteArray> response;
++    response["api_key"] = d->saslFacebook.apiKey();
++    response["call_id"] = d->saslFacebook.callId();
++    response["method"] = d->saslFacebook.method();
++    response["nonce"] = d->saslFacebook.nonce();
++    response["access_token"] = d->saslFacebook.sessionKey();
++    response["v"] = d->saslFacebook.v();
++
++    const QByteArray data = QXmppSaslXFacebook::serializeMessage(response, d->saslFacebook.appSecret());
++    QByteArray packet = "<response xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
++                        + data.toBase64() + "</response>";
++    sendData(packet);
++}
++
+ void QXmppOutgoingClient::sendNonSASLAuth(bool plainText)
+ {
+     QXmppNonSASLAuthIq authQuery;
+diff --git src/QXmppOutgoingClient.h src/QXmppOutgoingClient.h
+index adb3650..1a6ad12 100644
+--- src/QXmppOutgoingClient.h
++++ src/QXmppOutgoingClient.h
+@@ -98,6 +98,7 @@ private slots:
+ private:
+     void sendAuthDigestMD5ResponseStep1(const QString& challenge);
+     void sendAuthDigestMD5ResponseStep2(const QString& challenge);
++    void sendAuthXFacebookResponse(const QString& challenge);
+     void sendNonSASLAuth(bool plaintext);
+     void sendNonSASLAuthQuery();
+ 
+diff --git src/QXmppSaslAuth.cpp src/QXmppSaslAuth.cpp
+index c40ff1a..5194fd0 100644
+--- src/QXmppSaslAuth.cpp
++++ src/QXmppSaslAuth.cpp
+@@ -25,6 +25,7 @@
+ #include <cstdlib>
+ 
+ #include <QCryptographicHash>
++#include <QDateTime>
+ 
+ #include "QXmppSaslAuth.h"
+ #include "QXmppUtils.h"
+@@ -234,3 +235,111 @@ QByteArray QXmppSaslDigestMd5::serializeMessage(const QMap<QByteArray, QByteArra
+     return ba;
+ }
+ 
++QByteArray QXmppSaslXFacebook::apiKey() const
++{
++    return m_apikey;
++}
++
++void QXmppSaslXFacebook::setApiKey(const QByteArray &apiKey)
++{
++    m_apikey = apiKey;
++}
++
++QByteArray QXmppSaslXFacebook::callId() const
++{
++    return m_callId;
++}
++
++void QXmppSaslXFacebook::setCallId(const QByteArray &callId)
++{
++    m_callId = callId;
++}
++
++QByteArray QXmppSaslXFacebook::method() const
++{
++    return m_method;
++}
++
++void QXmppSaslXFacebook::setMethod(const QByteArray &method)
++{
++    m_method = method;
++}
++
++QByteArray QXmppSaslXFacebook::nonce() const
++{
++    return m_nonce;
++}
++
++void QXmppSaslXFacebook::setNonce(const QByteArray &nonce)
++{
++    m_nonce = nonce;
++}
++
++QByteArray QXmppSaslXFacebook::sessionKey() const
++{
++    return m_sessionKey;
++}
++
++void QXmppSaslXFacebook::setSessioKey(const QByteArray &sessionKey)
++{
++    m_sessionKey = sessionKey;
++}
++
++QByteArray QXmppSaslXFacebook::v() const
++{
++    return m_v;
++}
++
++void QXmppSaslXFacebook::setV(const QByteArray &v)
++{
++    m_v = v;
++}
++
++QByteArray QXmppSaslXFacebook::appSecret() const
++{
++    return m_appSecret;
++}
++
++void QXmppSaslXFacebook::setAppSecret(const QByteArray &appSecret)
++{
++    m_appSecret = appSecret;
++}
++
++QByteArray QXmppSaslXFacebook::generateCallId()
++{
++    return QString("%1").arg(QDateTime::currentMSecsSinceEpoch()).toUtf8();
++}
++
++// message parsing and serialization
++QMap<QByteArray, QByteArray> QXmppSaslXFacebook::parseMessage(const QByteArray &ba)
++{
++    QMap<QByteArray, QByteArray> map;
++    const QList<QByteArray> args = ba.split('&');
++
++    foreach (const QByteArray &arg, args) {
++        const QList<QByteArray> keyAndValue = arg.split('=');
++        map[keyAndValue.at(0)] = keyAndValue.at(1);
++    }
++
++    return map;
++}
++
++QByteArray QXmppSaslXFacebook::serializeMessage(const QMap<QByteArray, QByteArray> &map, const QByteArray &secret)
++{
++    QByteArray ba;
++    QByteArray sig;
++    foreach (const QByteArray &key, map.keys())
++    {
++        if (!ba.isEmpty())
++            ba.append('&');
++
++        const QString insertString = key + "=" + map[key];
++        ba.append(insertString);
++        sig.append(insertString);
++    }
++    sig.append(secret);
++    sig = QCryptographicHash::hash(sig, QCryptographicHash::Md5).toHex();
++    ba.append("&sig=");
++    ba.append(sig);
++    return ba;
++}
+diff --git src/QXmppSaslAuth.h src/QXmppSaslAuth.h
+index affc5d4..df30c04 100644
+--- src/QXmppSaslAuth.h
++++ src/QXmppSaslAuth.h
+@@ -77,4 +77,44 @@ private:
+     QByteArray m_password;
+ };
+ 
++class QXmppSaslXFacebook
++{
++public:
++    QByteArray apiKey() const;
++    void setApiKey(const QByteArray &apiKey);
++
++    QByteArray callId() const;
++    void setCallId(const QByteArray &callId);
++
++    QByteArray method() const;
++    void setMethod(const QByteArray &method);
++
++    QByteArray nonce() const;
++    void setNonce(const QByteArray &nonce);
++
++    QByteArray sessionKey() const;
++    void setSessioKey(const QByteArray &sessionKey);
++
++    QByteArray v() const;
++    void setV(const QByteArray &v);
++
++    QByteArray appSecret() const;
++    void setAppSecret(const QByteArray &appSecret);
++
++    static QByteArray generateCallId();
++
++    // message parsing and serialization
++    static QMap<QByteArray, QByteArray> parseMessage(const QByteArray &ba);
++    static QByteArray serializeMessage(const QMap<QByteArray, QByteArray> &map, const QByteArray &secret);
++
++private:
++    QByteArray m_apikey;
++    QByteArray m_callId;
++    QByteArray m_method;
++    QByteArray m_nonce;
++    QByteArray m_sessionKey;
++    QByteArray m_v;
++    QByteArray m_appSecret;
++};
++
+ #endif
+diff --git src/QXmppStreamFeatures.cpp src/QXmppStreamFeatures.cpp
+index e8f57b2..e475cd6 100644
+--- src/QXmppStreamFeatures.cpp
++++ src/QXmppStreamFeatures.cpp
+@@ -147,6 +147,8 @@ void QXmppStreamFeatures::parse(const QDomElement &element)
+                 m_authMechanisms << QXmppConfiguration::SASLDigestMD5;
+             else if (subElement.text() == QLatin1String("ANONYMOUS"))
+                 m_authMechanisms << QXmppConfiguration::SASLAnonymous;
++            else if (subElement.text() == QLatin1String("X-FACEBOOK-PLATFORM"))
++                m_authMechanisms << QXmppConfiguration::SASLXFacebook;
+             subElement = subElement.nextSiblingElement("mechanism");
+         }
+     }
+@@ -207,6 +209,9 @@ void QXmppStreamFeatures::toXml(QXmlStreamWriter *writer) const
+             case QXmppConfiguration::SASLAnonymous:
+                 writer->writeCharacters("ANONYMOUS");
+                 break;
++            case QXmppConfiguration::SASLXFacebook:
++                writer->writeCharacters("X-FACEBOOK-PLATFORM");
++                break;
+             }
+             writer->writeEndElement();
+         }
+-- 
+
+
