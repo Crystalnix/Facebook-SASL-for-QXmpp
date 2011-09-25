@@ -1,0 +1,16 @@
+How to Install:
+
+    cd /path/to/qxmpp
+    patch -p0 < facebook-sasl-for-qxmpp-0.3.0.patch
+
+How to Use:
+
+    QXmppConfiguration conf;
+    conf.setSASLAuthMechanism(QXmppConfiguration::SASLXFacebook);
+    conf.setDomain("chat.facebook.com");
+    conf.setAppId(YOUR_APP_ID);
+    conf.setAppSecret(YOUR_APP_SECRET);
+    conf.setAccessToken(ACCESS_TOKEN);
+
+    QXmppClient client;
+    client.connectToServer(conf);
